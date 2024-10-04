@@ -8,7 +8,7 @@ class Leaderboard(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command()
+    @commands.command(name='leaderboard', aliases=['lb'])
     async def leaderboard(self, ctx):
         """Displays the leaderboard with pagination."""
         # Fetch all players from the database, ordered by ELO descending

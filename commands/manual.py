@@ -41,7 +41,7 @@ class Manual(commands.Cog):
                 "command": "!leaderboard",
                 "description": "Display the current leaderboard.",
                 "parameters": "None",
-                "example": "!leaderboard"
+                "example": "!leaderboard or !lb"
             },
             {
                 "command": "!manual",
