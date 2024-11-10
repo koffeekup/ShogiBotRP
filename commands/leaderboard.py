@@ -27,22 +27,40 @@ class Leaderboard(commands.Cog):
         medals = ["🥇", "🥈", "🥉"]
 
         # Function to calculate the visual length of a string (accounting for emojis)
+        # def visual_length(s):
+        #     # Emojis are generally considered to be double-width characters in monospace fonts
+        #     emoji_pattern = re.compile(
+        #         "[\U0001F1E6-\U0001F1FF]"  # flags
+        #         "|[\U0001F300-\U0001F5FF]"  # symbols & pictographs
+        #         "|[\U0001F600-\U0001F64F]"  # emoticons
+        #         "|[\U0001F680-\U0001F6FF]"  # transport & map symbols
+        #         "|[\U0001F700-\U0001F77F]"  # alchemical symbols
+        #         "|[\U0001F780-\U0001F7FF]"  # Geometric Shapes Extended
+        #         "|[\U0001F800-\U0001F8FF]"  # Supplemental Arrows-C
+        #         "|[\U0001F900-\U0001F9FF]"  # Supplemental Symbols and Pictographs
+        #         "|[\U0001FA00-\U0001FA6F]"  # Chess Symbols
+        #         "|[\U0001FA70-\U0001FAFF]"  # Symbols and Pictographs Extended-A
+        #         "|[\U00002702-\U000027B0]"  # Dingbats
+        #         "|[\U000024C2-\U0001F251]"  # Enclosed characters
+        #         , flags=re.UNICODE)
+        #     length = 0
+        #     for char in s:
+        #         if emoji_pattern.match(char):
+        #             length += 2  # Emojis take up 2 spaces
+        #         else:
+        #             length += 1
+        #     return length
         def visual_length(s):
-            # Emojis are generally considered to be double-width characters in monospace fonts
+            if s is None:  # Check if the input is None
+                return 0   # Return 0 or some appropriate length
+            # Rest of the function remains the same
             emoji_pattern = re.compile(
-                "[\U0001F1E6-\U0001F1FF]"  # flags
-                "|[\U0001F300-\U0001F5FF]"  # symbols & pictographs
-                "|[\U0001F600-\U0001F64F]"  # emoticons
-                "|[\U0001F680-\U0001F6FF]"  # transport & map symbols
-                "|[\U0001F700-\U0001F77F]"  # alchemical symbols
-                "|[\U0001F780-\U0001F7FF]"  # Geometric Shapes Extended
-                "|[\U0001F800-\U0001F8FF]"  # Supplemental Arrows-C
-                "|[\U0001F900-\U0001F9FF]"  # Supplemental Symbols and Pictographs
-                "|[\U0001FA00-\U0001FA6F]"  # Chess Symbols
-                "|[\U0001FA70-\U0001FAFF]"  # Symbols and Pictographs Extended-A
-                "|[\U00002702-\U000027B0]"  # Dingbats
-                "|[\U000024C2-\U0001F251]"  # Enclosed characters
-                , flags=re.UNICODE)
+                "[\U0001F1E6-\U0001F1FF]|[\U0001F300-\U0001F5FF]|[\U0001F600-\U0001F64F]|"
+                "[\U0001F680-\U0001F6FF]|[\U0001F700-\U0001F77F]|[\U0001F780-\U0001F7FF]|"
+                "[\U0001F800-\U0001F8FF]|[\U0001F900-\U0001F9FF]|[\U0001FA00-\U0001FA6F]|"
+                "[\U0001FA70-\U0001FAFF]|[\U00002702-\U000027B0]|[\U000024C2-\U0001F251]",
+                flags=re.UNICODE)
+            
             length = 0
             for char in s:
                 if emoji_pattern.match(char):

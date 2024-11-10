@@ -1,10 +1,16 @@
 # utils/db.py
 
-import psycopg2
+
+import sys
+import os
+
+# Add the root directory (ShogiBotRP) to the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import psycopg
 from config import DATABASE_CONFIG
 
 def get_connection():
-    conn = psycopg2.connect(**DATABASE_CONFIG)
+    conn = psycopg.connect(**DATABASE_CONFIG)
     return conn
 
 def execute_query(query, params=None):

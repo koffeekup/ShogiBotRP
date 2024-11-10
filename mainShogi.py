@@ -1,15 +1,13 @@
-# mainShogi.py
-
 import discord
 from discord.ext import commands, tasks
+import os
+import asyncio
 from config import BOT_TOKEN
 from utils.db import fetch_query
 from utils.role_update import update_player_roles
-import os
 
 # Set the working directory to the directory of the script
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
 
 # Intents
 intents = discord.Intents.default()
@@ -23,10 +21,10 @@ async def load_cogs():
     for filename in os.listdir('commands'):
         if filename.endswith('.py'):
             await bot.load_extension(f'commands.{filename[:-3]}')
+
 # Background task to update roles
 @tasks.loop(hours=24)
 async def update_roles_task():
-    """Background task to update roles for all players every hour."""
     await bot.wait_until_ready()
     guild = discord.utils.get(bot.guilds, name='Shogi Club')  # Replace with your server name
     if not guild:
@@ -60,7 +58,7 @@ async def update_roles_task():
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user.name}')
-    await load_cogs()
+    await load_cogs()  # Load cogs when the bot is ready
     update_roles_task.start()
 
 # Run the bot
