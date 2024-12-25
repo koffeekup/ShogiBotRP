@@ -2,9 +2,14 @@ import discord
 from discord.ext import commands, tasks
 import os
 import asyncio
-from config import BOT_TOKEN
+from dotenv import load_dotenv
 from utils.db import fetch_query
 from utils.role_update import update_player_roles
+
+# Load environment variables from .env
+load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # Set the working directory to the directory of the script
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
