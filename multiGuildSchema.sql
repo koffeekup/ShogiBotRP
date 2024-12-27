@@ -38,7 +38,15 @@ CREATE TABLE games (
     guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
     player1_id INT REFERENCES players(player_id) ON DELETE CASCADE,
     player2_id INT REFERENCES players(player_id) ON DELETE CASCADE,
-    player1_color TEXT CHECK (player1_color IN ('black', 'white')) NOT NULL,
+    player1_color TEXT CHECK (player1_color IN ('sente', 'gote')) NOT NULL,
     result TEXT CHECK (result IN ('1-0', '0-1', '0.5-0.5')) NOT NULL,
-    date_played TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    date_played TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    note TEXT
 );
+-- Allow public connection to the database and usage of the schema
+GRANT CONNECT ON DATABASE shogibot_db TO PUBLIC;
+GRANT USAGE ON SCHEMA public TO PUBLIC;
+
+-- Assign specific privileges to shogi_user
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO shogi_user;
+GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO shogi_user;

@@ -4,52 +4,60 @@ from utils.db import execute_query, fetch_query
 from config import ADMIN_ROLE_NAME
 import asyncio
 import re
+import logging
+from utils.decorators import command_in_progress, active_commands
+
 
 class Signup(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @commands.command()
+    @command_in_progress()
     async def signup(self, ctx):
-
+        """
+        Allows a user to sign up for the bot.
+        """
+        guild_id = ctx.guild.id
         user_id = ctx.author.id
-        existing_user = fetch_query(
-            "SELECT player_name FROM players WHERE discord_user_id = %s",
-            (user_id,)
-        )
+        guild_name = ctx.guild.name
+        user_name = ctx.author.name
 
+        logging.info(f"Signup initiated by user: {user_name} (ID: {user_id}) in guild: {guild_name} (ID: {guild_id})")
+
+        # Check if the user is already signed up
+        existing_user = fetch_query(
+            "SELECT player_name FROM players WHERE discord_user_id = %s AND guild_id = %s",
+            (user_id, guild_id)
+        )
         if existing_user:
-            # User is already signed up
+            logging.info(f"User {user_name} (ID: {user_id}) is already signed up with player name: {existing_user[0]['player_name']}")
             already_signed_up_embed = discord.Embed(
                 title="🔒 **Already Signed Up**",
                 description=(
-                    f"You are already signed up as **{existing_user[0][0]}**.\n\n"
+                    f"You are already signed up as **{existing_user[0]['player_name']}**.\n\n"
                     "If you need to update your information, please contact an admin."
                 ),
                 color=discord.Color.orange()
             )
             await ctx.send(embed=already_signed_up_embed)
-            return  # Prevent further execution
+            return
 
-        # Step 1: Initialize variables
+        # Initialize variables
         total_timeout = 180  # Total time allowed for the signup process
         start_time = asyncio.get_event_loop().time()
 
         def message_check(msg):
             return msg.author == ctx.author and msg.channel == ctx.channel
 
-        # Step 2: Ask for the player's name
-        while True:
-            time_elapsed = asyncio.get_event_loop().time() - start_time
-            time_remaining = total_timeout - time_elapsed
+        def calculate_time_remaining():
+            return total_timeout - (asyncio.get_event_loop().time() - start_time)
 
+        # Step 1: Ask for the player's name
+        while True:
+            time_remaining = calculate_time_remaining()
             if time_remaining <= 0:
-                timeout_embed = discord.Embed(
-                    title="⏳ **Signup Timed Out**",
-                    description="You took too long to respond. Please start the signup process again.",
-                    color=discord.Color.red()
-                )
-                await ctx.send(embed=timeout_embed)
+                await self.send_timeout_embed(ctx)
                 return
 
             name_embed = discord.Embed(
@@ -58,9 +66,9 @@ class Signup(commands.Cog):
                     "Please input your name in the format:\n"
                     "**(FirstName)(LastInitial)**\n\n"
                     "**Examples:**\n"
-                    "• `DwayneJ`\n"
-                    "• `ClarkK`\n"
-                    "• `MarieC`"
+                    "• DwayneJ\n"
+                    "• ClarkK\n"
+                    "• MarieC"
                 ),
                 color=discord.Color.blue()
             )
@@ -71,35 +79,38 @@ class Signup(commands.Cog):
                 name_msg = await self.bot.wait_for("message", check=message_check, timeout=time_remaining)
                 player_name = name_msg.content.strip()
 
-                # Validate the name format
-                if re.match(r'^[A-Z][a-z]+[A-Z]$', player_name):
-                    break  # Valid name provided
-                else:
-                    error_embed = discord.Embed(
-                        title="❌ **Invalid Format**",
+                if not re.match(r'^[A-Z][a-z]+[A-Z]$', player_name):
+                    logging.warning(f"User {user_name} (ID: {user_id}) entered an invalid name: {player_name}")
+                    await ctx.send(embed=self.invalid_name_embed())
+                    continue
+
+                # Check for duplicate names
+                duplicate_name = fetch_query(
+                    "SELECT player_name FROM players WHERE player_name = %s AND guild_id = %s",
+                    (player_name, guild_id)
+                )
+                if duplicate_name:
+                    logging.info(f"User {user_name} (ID: {user_id}) tried to use a duplicate name: {player_name}")
+                    duplicate_embed = discord.Embed(
+                        title="❌ **Duplicate Name**",
                         description=(
-                            "Your name must be in the format:\n"
-                            "**(FirstName)(LastInitial)**\n\n"
-                            "Please use proper capitalization.\n\n"
-                            "**Examples:**\n"
-                            "• `DwayneJ`\n"
-                            "• `ClarkK`\n"
-                            "• `MarieC`"
+                            f"The name **{player_name}** is already taken by another player.\n"
+                            "Please choose a different name."
                         ),
                         color=discord.Color.red()
                     )
-                    error_embed.set_footer(text="Please try again.")
-                    await ctx.send(embed=error_embed)
+                    await ctx.send(embed=duplicate_embed)
+                    continue
+
+                # If no issues, break the loop
+                logging.info(f"User {user_name} (ID: {user_id}) selected the name: {player_name}")
+                break
             except asyncio.TimeoutError:
-                timeout_embed = discord.Embed(
-                    title="⏳ **Signup Timed Out**",
-                    description="You took too long to respond. Please start the signup process again.",
-                    color=discord.Color.red()
-                )
-                await ctx.send(embed=timeout_embed)
+                logging.warning(f"Signup timed out for user: {user_name} (ID: {user_id})")
+                await self.send_timeout_embed(ctx)
                 return
 
-        # Step 3: Confirmation of the name
+        # Step 2: Confirm the name
         confirmation_embed = discord.Embed(
             title="✅ **Confirm Your Name**",
             description=f"Do you want to sign up with **{player_name}**?",
@@ -110,137 +121,168 @@ class Signup(commands.Cog):
         await confirmation_message.add_reaction('✅')
         await confirmation_message.add_reaction('❌')
 
-        def reaction_check(reaction, user):
-            return (
-                user == ctx.author and
-                str(reaction.emoji) in ['✅', '❌'] and
-                reaction.message.id == confirmation_message.id
+        try:
+            reaction, user = await self.bot.wait_for(
+                'reaction_add',
+                timeout=calculate_time_remaining(),
+                check=lambda r, u: u == ctx.author and r.message.id == confirmation_message.id and str(r.emoji) in ['✅', '❌']
             )
 
-        # Adjust time remaining for the next step
-        time_elapsed = asyncio.get_event_loop().time() - start_time
-        time_remaining = total_timeout - time_elapsed
+            if str(reaction.emoji) == '❌':
+                logging.info(f"User {user_name} (ID: {user_id}) canceled the signup.")
+                await ctx.send(embed=self.canceled_embed())
+                return
+        except asyncio.TimeoutError:
+            logging.warning(f"Signup timed out for user: {user_name} (ID: {user_id}) during confirmation.")
+            await self.send_timeout_embed(ctx)
+            return
+
+        # Step 3: Select player's level
+        level_embed = discord.Embed(
+            title="🎚️ **Select Your Level**",
+            description=(
+                "Please react with your level:\n\n"
+                "1️⃣ - **Beginner**\n"
+                "2️⃣ - **Intermediate**\n"
+                "3️⃣ - **Advanced**"
+            ),
+            color=discord.Color.blue()
+        )
+        level_embed.set_footer(text="React with 1️⃣, 2️⃣, or 3️⃣.")
+        level_message = await ctx.send(embed=level_embed)
+        await level_message.add_reaction('1️⃣')
+        await level_message.add_reaction('2️⃣')
+        await level_message.add_reaction('3️⃣')
 
         try:
-            reaction, user = await self.bot.wait_for('reaction_add', timeout=time_remaining, check=reaction_check)
-
-            if str(reaction.emoji) == '✅':
-                # Step 4: Ask for the player's level
-                level_embed = discord.Embed(
-                    title="🎚️ **Select Your Level**",
-                    description=(
-                        "Please react with your level:\n\n"
-                        "1️⃣ - **Beginner**\n"
-                        "2️⃣ - **Intermediate**\n"
-                        "3️⃣ - **Advanced (or returning player, I'll manually set it to your old ELO)**"
-                    ),
-                    color=discord.Color.blue()
-                )
-                level_embed.set_footer(text="React with 1️⃣, 2️⃣, or 3️⃣.")
-                level_message = await ctx.send(embed=level_embed)
-                await level_message.add_reaction('1️⃣')
-                await level_message.add_reaction('2️⃣')
-                await level_message.add_reaction('3️⃣')
-
-                def level_reaction_check(reaction, user):
-                    return (
-                        user == ctx.author and
-                        str(reaction.emoji) in ['1️⃣', '2️⃣', '3️⃣'] and
-                        reaction.message.id == level_message.id
-                    )
-
-                # Adjust time remaining for the next step
-                time_elapsed = asyncio.get_event_loop().time() - start_time
-                time_remaining = total_timeout - time_elapsed
-
-                reaction, user = await self.bot.wait_for('reaction_add', timeout=time_remaining, check=level_reaction_check)
-
-                # Set ELO based on the selected level
-                if str(reaction.emoji) == '1️⃣':
-                    elo = 500
-                    level = 'Beginner'
-                elif str(reaction.emoji) == '2️⃣':
-                    elo = 1000
-                    level = 'Intermediate'
-                elif str(reaction.emoji) == '3️⃣':
-                    elo = 1000
-                    level = 'Advanced'
-                else:
-                    elo = 1000
-                    level = 'Intermediate'
-
-                # Insert the player into the database
-                query = """
-                INSERT INTO players (discord_user_id, player_name, elo)
-                VALUES (%s, %s, %s)
-                """
-                execute_query(query, (ctx.author.id, player_name, elo))
-
-                # Attempt to change the user's nickname
-                try:
-                    await ctx.author.edit(nick=player_name)
-                    nickname_message = f"Your nickname has been changed to **{player_name}**."
-                except discord.Forbidden:
-                    nickname_message = "I do not have permission to change your nickname."
-                except Exception as e:
-                    nickname_message = f"An error occurred while changing your nickname: {e}"
-
-                # Send success message
-                success_embed = discord.Embed(
-                    title="🎉 **Signup Successful**",
-                    description=(
-                        f"You have been signed up as **{player_name}** with an ELO of **{elo}**!\n\n"
-                        f"{nickname_message}"
-                        f"Try `!manual` to get started!"
-                    ),
-                    color=discord.Color.green()
-                )
-                await ctx.send(embed=success_embed)
-
-                # If advanced, send DM to admins
-                if level == 'Advanced':
-                    # Fetch users with the admin role
-                    admin_role = discord.utils.get(ctx.guild.roles, name=ADMIN_ROLE_NAME)
-                    if admin_role:
-                        admins = admin_role.members
-                        for admin in admins:
-                            try:
-                                dm_embed = discord.Embed(
-                                    title="🚨 **Advanced Player Signup**",
-                                    description=(
-                                        f"{ctx.author.mention} ({player_name}) has signed up as **Advanced**.\n"
-                                        "You may want to manually adjust their ELO."
-                                    ),
-                                    color=discord.Color.orange()
-                                )
-                                dm_embed.add_field(
-                                    name="Message Link",
-                                    value=f"[Jump to Message]({level_message.jump_url})"
-                                )
-                                await admin.send(embed=dm_embed)
-                            except discord.Forbidden:
-                                pass
-                    else:
-                        error_embed = discord.Embed(
-                            title="⚠️ **Error**",
-                            description=f"Admin role `{ADMIN_ROLE_NAME}` not found.",
-                            color=discord.Color.red()
-                        )
-                        await ctx.send(embed=error_embed)
-            else:
-                cancel_embed = discord.Embed(
-                    title="❌ **Signup Canceled**",
-                    description="You have canceled the signup process.",
-                    color=discord.Color.red()
-                )
-                await ctx.send(embed=cancel_embed)
-        except asyncio.TimeoutError:
-            timeout_embed = discord.Embed(
-                title="⏳ **Signup Timed Out**",
-                description="You took too long to respond. Please start the signup process again.",
-                color=discord.Color.red()
+            reaction, user = await self.bot.wait_for(
+                'reaction_add',
+                timeout=calculate_time_remaining(),
+                check=lambda r, u: u == ctx.author and r.message.id == level_message.id and str(r.emoji) in ['1️⃣', '2️⃣', '3️⃣']
             )
-            await ctx.send(embed=timeout_embed)
+
+            if str(reaction.emoji) == '1️⃣':
+                elo, level = 500, 'Beginner'
+            elif str(reaction.emoji) == '2️⃣':
+                elo, level = 1000, 'Intermediate'
+            elif str(reaction.emoji) == '3️⃣':
+                elo, level = 1000, 'Advanced'
+
+            logging.info(f"User {user_name} (ID: {user_id}) selected level: {level} (ELO: {elo})")
+        except asyncio.TimeoutError:
+            logging.warning(f"Signup timed out for user: {user_name} (ID: {user_id}) during level selection.")
+            await self.send_timeout_embed(ctx)
+            return
+
+        # Step 4: Add player to the database
+        try:
+            execute_query(
+                "INSERT INTO players (discord_user_id, guild_id, player_name, elo) VALUES (%s, %s, %s, %s)",
+                (user_id, guild_id, player_name, elo)
+            )
+            logging.info(f"User {user_name} (ID: {user_id}) successfully signed up with name: {player_name}, ELO: {elo}, Level: {level}")
+        except Exception as e:
+            logging.error(f"Failed to insert user {user_name} (ID: {user_id}) into database: {e}")
+            await ctx.send("An error occurred while completing your signup. Please contact an admin.")
+            return
+
+        # Attempt to change the user's nickname
+        try:
+            await ctx.author.edit(nick=player_name)
+            nickname_message = f"Your nickname has been changed to **{player_name}**."
+        except discord.Forbidden:
+            logging.warning(f"Bot lacks permission to change nickname for user {user_name} (ID: {user_id}).")
+            nickname_message = "I do not have permission to change your nickname."
+            await self.notify_admins_nickname(ctx, player_name)
+
+        # Send signup success message
+        success_embed = discord.Embed(
+            title="🎉 **Signup Successful**",
+            description=(
+                f"<@{user_id}>, you have been signed up as **{player_name}** with an ELO of **{elo}**!\n\n"
+                f"{nickname_message}"
+            ),
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=success_embed)
+
+        # Notify admins if "Advanced"
+        if level == 'Advanced':
+            await self.notify_admins(ctx, player_name)
+
+    # Helper method to notify admins about failed nickname change
+    async def notify_admins_nickname(self, ctx, player_name):
+        admin_role = discord.utils.get(ctx.guild.roles, name=ADMIN_ROLE_NAME)
+        if admin_role:
+            for admin in admin_role.members:
+                try:
+                    dm_embed = discord.Embed(
+                        title="🚨 **Nickname Change Required**",
+                        description=(
+                            f"{ctx.author.mention} ({ctx.author.name}) attempted to sign up with the name "
+                            f"**{player_name}**, but I could not change their nickname due to insufficient permissions.\n\n"
+                            "Please manually update their nickname to follow server guidelines."
+                        ),
+                        color=discord.Color.orange()
+                    )
+                    dm_embed.set_footer(text=f"Guild: {ctx.guild.name}")
+                    await admin.send(embed=dm_embed)
+                except discord.Forbidden:
+                    pass  # Admin has disabled DMs from the server
+
+    # Helper method to notify admins about advanced signup
+    async def notify_admins(self, ctx, player_name):
+        admin_role = discord.utils.get(ctx.guild.roles, name=ADMIN_ROLE_NAME)
+        if admin_role:
+            for admin in admin_role.members:
+                try:
+                    await admin.send(embed=self.advanced_signup_embed(ctx.author, player_name))
+                except discord.Forbidden:
+                    pass
+
+    # Embed for advanced signup notifications
+    def advanced_signup_embed(self, member, player_name):
+        return discord.Embed(
+            title="🚨 **Advanced Player Signup**",
+            description=(
+                f"{member.mention} ({player_name}) has signed up as **Advanced**.\n"
+                "You may want to manually adjust their ELO."
+            ),
+            color=discord.Color.orange()
+        )
+
+    # Embed for signup cancellation
+    def canceled_embed(self):
+        return discord.Embed(
+            title="❌ **Signup Canceled**",
+            description="You have canceled the signup process.",
+            color=discord.Color.red()
+        )
+
+    # Embed for signup timeout
+    async def send_timeout_embed(self, ctx):
+        timeout_embed = discord.Embed(
+            title="⏳ **Signup Timed Out**",
+            description="You took too long to respond. Please start the signup process again.",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=timeout_embed)
+
+    # Embed for invalid name
+    def invalid_name_embed(self):
+        return discord.Embed(
+            title="❌ **Invalid Format**",
+            description=(
+                "Your name must be in the format:\n"
+                "**(FirstName)(LastInitial)**\n\n"
+                "Please use proper capitalization.\n\n"
+                "**Examples:**\n"
+                "• DwayneJ\n"
+                "• ClarkK\n"
+                "• MarieC"
+            ),
+            color=discord.Color.red()
+        )
 
 # Setup function to load the cog
 async def setup(bot):
