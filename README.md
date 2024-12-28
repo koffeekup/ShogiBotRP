@@ -54,12 +54,6 @@ ShogiBotRP is an interactive Discord bot that enables players to log their Shogi
 - **Discord Bot Token**: You need a bot token from the [Discord Developer Portal](https://discord.com/developers/applications).
 - **PostgreSQL Database**: The bot stores all data in a PostgreSQL database. Make sure your database is set up and running.
 
-### **Dependencies**
-List of required Python libraries (to be confirmed by you):
-- `discord.py`
-- `psycopg2` (PostgreSQL library for Python)
-- `dotenv` (for managing environment variables)
-
 You can install dependencies via `requirements.txt`:
 ```bash
 pip install -r requirements.txt
